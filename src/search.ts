@@ -84,11 +84,6 @@ export async function semanticSearch(
   const queryEmbedding = await getEmbedding(query, onStatus);
 
   if (queryEmbedding) {
-    console.log('Query embedding dimensions:', queryEmbedding.length);
-    console.log('Document embedding dimensions:', state.data.documents[0].embedding.length);
-    console.log('Query embedding sample:', queryEmbedding.slice(0, 5));
-    console.log('Doc embedding sample:', state.data.documents[0].embedding.slice(0, 5));
-
     // Calculate similarities
     const similarities: SearchMatch[] = [];
 
@@ -99,15 +94,6 @@ export async function semanticSearch(
 
     // Sort by similarity
     similarities.sort((a, b) => b.score - a.score);
-
-    // Debug: log top scores
-    console.log(
-      'Top 5 similarities:',
-      similarities.slice(0, 5).map((s) => ({
-        score: s.score.toFixed(4),
-        preview: state.data!.documents[s.index].text.slice(0, 50),
-      }))
-    );
 
     const bestScore = similarities[0]?.score || 0;
     const minScore = 0.3; // Absolute minimum

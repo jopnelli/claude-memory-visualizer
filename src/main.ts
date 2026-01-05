@@ -345,6 +345,12 @@ async function init() {
       onSearchStatus
     );
   } else {
+    // Disable claude-memory option if data doesn't exist
+    const claudeOption = sampleSelect.querySelector('option[value="claude-memory"]') as HTMLOptionElement;
+    if (claudeOption) {
+      claudeOption.disabled = true;
+      claudeOption.textContent = 'Claude Memory (not exported)';
+    }
     sampleSelect.value = 'demo';
     loadData('/data/demo.json', getAlgorithm(), onLoading, onStats, onSearchStatus);
   }

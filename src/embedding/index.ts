@@ -24,7 +24,6 @@ export async function getEmbedding(
   if (!isNomicData && (await checkLocalEmbed())) {
     const embedding = await getLocalEmbedding(text);
     if (embedding) {
-      console.log('Using local embedding server (all-mpnet-base-v2)');
       return embedding;
     }
   }
@@ -33,13 +32,11 @@ export async function getEmbedding(
   if (isNomicData && (await checkOllama())) {
     const embedding = await getOllamaEmbedding(text);
     if (embedding) {
-      console.log('Using Ollama (nomic-embed-text)');
       return embedding;
     }
   }
 
   // Fallback to browser embedding (downloads ~420MB model)
-  console.log('Falling back to browser embedding...');
   return getBrowserEmbedding(text, onStatus);
 }
 
@@ -77,6 +74,9 @@ export function cosineSimilarity(a: number[], b: number[]): number {
     normA += aVal * aVal;
     normB += bVal * bVal;
   }
+
+  // Handle zero vectors to avoid NaN
+  if (normA === 0 || normB === 0) return 0;
 
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }

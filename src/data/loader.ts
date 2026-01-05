@@ -39,11 +39,13 @@ export async function loadData(
   }
 }
 
-// Check if a data file exists
+// Check if a data file exists (verify it's actually JSON, not SPA fallback HTML)
 export async function checkDataExists(url: string): Promise<boolean> {
   try {
     const response = await fetch(url, { method: 'HEAD' });
-    return response.ok;
+    if (!response.ok) return false;
+    const contentType = response.headers.get('content-type') || '';
+    return contentType.includes('application/json');
   } catch {
     return false;
   }
