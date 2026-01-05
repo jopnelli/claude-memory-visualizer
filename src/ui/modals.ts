@@ -94,6 +94,19 @@ function clusterTopics(docs: Document[]): TopicCluster[] {
   return significantClusters;
 }
 
+// Strip markdown formatting from text
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, '') // headers
+    .replace(/\*\*([^*]+)\*\*/g, '$1') // bold
+    .replace(/\*([^*]+)\*/g, '$1') // italic
+    .replace(/^[-*+]\s+/gm, '') // list items
+    .replace(/^\d+\.\s+/gm, '') // numbered lists
+    .replace(/`([^`]+)`/g, '$1') // inline code
+    .replace(/\n{3,}/g, '\n\n') // excess newlines
+    .trim();
+}
+
 // Generate AI summary using Ollama
 async function generateAISummary(docs: Document[]): Promise<string> {
   const ollamaReady = await checkOllama();
@@ -107,9 +120,11 @@ async function generateAISummary(docs: Document[]): Promise<string> {
     .map((doc, i) => `[${i + 1}] ${doc.text.slice(0, 500)}`)
     .join('\n\n---\n\n');
 
-  const prompt = `Here are ${chunksToSummarize.length} conversation chunks from a Claude memory database. Write a brief plain-text summary (max 250 characters) of the main themes. No markdown, no bullet points, no formatting - just plain text:\n\n${chunksText}`;
+  const prompt = `Summarize these ${chunksToSummarize.length} conversation chunks in ONE short sentence (under 200 chars). Output ONLY the sentence, nothing else. No headers, no bullets, no lists, no markdown:\n\n${chunksText}`;
 
-  return generateWithOllama(prompt);
+  const result = await generateWithOllama(prompt);
+  // Strip any markdown the model might have added anyway
+  return stripMarkdown(result).slice(0, 300);
 }
 
 // Close selection modal
