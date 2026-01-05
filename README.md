@@ -133,10 +133,11 @@ python scripts/export-chromadb.py
 By default, semantic search downloads a ~420MB embedding model to the browser on first use. For faster search, run the local embedding server:
 
 ```bash
-# Install sentence-transformers (one time)
-pip install sentence-transformers
+# Use claude-memory's venv (already has sentence-transformers)
+~/dev/claude-memory/.venv/bin/python scripts/embed-server.py
 
-# Run the embedding server (in a separate terminal)
+# Or install separately and run
+pip install sentence-transformers
 python scripts/embed-server.py
 ```
 
