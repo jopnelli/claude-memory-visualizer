@@ -25,14 +25,14 @@ export async function loadData(
 
     state.data = json;
 
-    // Notify about loaded data
-    onStats?.(json);
-
     // Initialize embedder (checks local server, falls back to browser)
     initEmbedder(onSearchStatus);
 
-    // Auto-compute projection
+    // Compute projection (this sets timeRange for legend)
     await computeProjection(algorithm, onLoading);
+
+    // Notify about loaded data AFTER projection (legend needs timeRange)
+    onStats?.(json);
   } catch (err) {
     console.error('Error loading data:', err);
     onLoading?.('Error loading data');

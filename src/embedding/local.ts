@@ -11,9 +11,12 @@ export async function checkLocalEmbed(): Promise<boolean> {
   }
 
   try {
+    // Use POST to check - server only handles POST and has CORS headers for POST
     const response = await fetch(LOCAL_EMBED_URL, {
-      method: 'OPTIONS',
-      signal: AbortSignal.timeout(1000),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'test' }),
+      signal: AbortSignal.timeout(2000),
     });
     embeddingState.localEmbedAvailable = response.ok;
     return embeddingState.localEmbedAvailable;
