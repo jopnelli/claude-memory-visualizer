@@ -2,6 +2,8 @@
 
 3D visualization of embedding spaces from [claude-memory](https://github.com/jopnelli/claude-memory) - explore your Claude Code conversations in semantic space.
 
+![Claude Memory Visualizer showing a 3D point cloud of conversation embeddings](docs/screenshot.png)
+
 ## Prerequisites
 
 This visualizer works with data from [claude-memory](https://github.com/jopnelli/claude-memory). You'll need:
