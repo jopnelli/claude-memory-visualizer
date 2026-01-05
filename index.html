@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Memory Visualizer</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      overflow: hidden;
+    }
+    #app {
+      display: grid;
+      grid-template-columns: 280px 1fr 320px;
+      grid-template-rows: 1fr;
+      height: 100vh;
+    }
+    .panel {
+      padding: 16px;
+      border-right: 1px solid #222;
+      overflow-y: auto;
+    }
+    .panel:last-child {
+      border-right: none;
+      border-left: 1px solid #222;
+    }
+    h2 {
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #888;
+      margin-bottom: 16px;
+    }
+    .stats {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 16px;
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .control-group label {
+      display: block;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 4px;
+    }
+    select, button, input[type="file"] {
+      width: 100%;
+      padding: 8px 12px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    select:hover, button:hover {
+      border-color: #555;
+    }
+    button {
+      background: #2563eb;
+      border-color: #2563eb;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #canvas-container {
+      position: relative;
+      background: #0a0a0a;
+    }
+    canvas {
+      display: block;
+    }
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #666;
+    }
+    #inspector {
+      background: #111;
+    }
+    .inspector-content {
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .inspector-empty {
+      color: #555;
+      font-style: italic;
+    }
+    .doc-text {
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .doc-meta {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #333;
+      font-size: 11px;
+      color: #666;
+    }
+    .query-input {
+      margin-top: 16px;
+    }
+    .query-input input {
+      width: 100%;
+      padding: 8px 12px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 13px;
+    }
+    .color-legend {
+      margin-top: 16px;
+      font-size: 12px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .info-panel {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #999;
+    }
+    .info-panel strong {
+      color: #e0e0e0;
+    }
+    .info-panel .tag {
+      display: inline-block;
+      background: #2563eb33;
+      color: #60a5fa;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      margin-right: 4px;
+    }
+    .info-panel .tag.warn {
+      background: #f59e0b33;
+      color: #fbbf24;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="panel" id="controls-panel">
+      <h2>Data</h2>
+      <div class="controls">
+        <div class="control-group">
+          <label>Load Data</label>
+          <div id="drop-zone" style="border: 2px dashed #333; border-radius: 8px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s;">
+            <input type="file" id="file-input" accept=".json" style="display: none;">
+            <div style="color: #666; font-size: 12px;">
+              Drop JSON or <span style="color: #3b82f6; text-decoration: underline;">browse</span>
+            </div>
+          </div>
+        </div>
+        <div class="control-group">
+          <label>Or use sample</label>
+          <select id="sample-select">
+            <option value="">Select sample...</option>
+            <option value="claude-memory">Claude Memory (real)</option>
+            <option value="demo">Demo Dataset</option>
+          </select>
+        </div>
+      </div>
+
+      <h2 style="margin-top: 24px;">Projection</h2>
+      <div class="controls">
+        <div class="control-group">
+          <label>Algorithm</label>
+          <select id="algorithm-select">
+            <option value="umap">UMAP</option>
+            <option value="tsne">t-SNE</option>
+            <option value="pca">PCA</option>
+          </select>
+        </div>
+        <div id="algorithm-info" class="info-panel"></div>
+      </div>
+
+      <div class="stats" id="stats">No data loaded</div>
+
+      <div class="color-legend" id="legend"></div>
+    </div>
+
+    <div id="canvas-container">
+      <div class="loading" id="loading">Load data to begin</div>
+      <div class="selection-hint" style="position: absolute; bottom: 12px; left: 12px; font-size: 11px; color: #555; pointer-events: none;">
+        ⌘+drag to select region
+      </div>
+    </div>
+
+    <!-- Settings button - fixed to viewport -->
+    <button id="settings-btn" title="Settings" style="position: fixed; bottom: 16px; right: 16px; width: 40px; height: 40px; border-radius: 50%; background: #1a1a1a; border: 1px solid #333; color: #666; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 100; transition: all 0.2s;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
+    </button>
+
+    <div class="panel" id="inspector">
+      <h2>Inspector</h2>
+      <div class="inspector-content">
+        <div class="inspector-empty">Hover over a point to see details</div>
+      </div>
+
+      <div class="query-input">
+        <h2>Query</h2>
+        <input type="text" id="query-input" placeholder="Enter search query..." disabled>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
