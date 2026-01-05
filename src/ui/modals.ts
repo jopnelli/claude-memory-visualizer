@@ -107,7 +107,7 @@ async function generateAISummary(docs: Document[]): Promise<string> {
     .map((doc, i) => `[${i + 1}] ${doc.text.slice(0, 500)}`)
     .join('\n\n---\n\n');
 
-  const prompt = `Here are ${chunksToSummarize.length} conversation chunks from a Claude memory database. Please provide a concise summary (2-3 sentences) of the main themes and topics discussed across these conversations:\n\n${chunksText}`;
+  const prompt = `Here are ${chunksToSummarize.length} conversation chunks from a Claude memory database. Write a brief plain-text summary (max 250 characters) of the main themes. No markdown, no bullet points, no formatting - just plain text:\n\n${chunksText}`;
 
   return generateWithOllama(prompt);
 }
