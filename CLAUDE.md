@@ -1,111 +1,50 @@
----
-description: Use Bun instead of Node.js, npm, pnpm, or vite.
-globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
-alwaysApply: false
----
+# Claude Memory Visualizer - Project Context
 
-Default to using Bun instead of Node.js.
+3D visualization tool for exploring conversation embeddings from claude-memory.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+## Quick Commands
 
-## APIs
-
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
-
-## Testing
-
-Use `bun test` to run tests.
-
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
+```bash
+bun install          # Install dependencies
+bun run dev          # Start dev server (http://localhost:5173)
+python scripts/export-chromadb.py  # Re-export data after claude-memory changes
 ```
 
-## Frontend
+## Architecture
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
-
-Server:
-
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
+```
+src/main.ts          # All visualization logic (Three.js, search, UI)
+index.html           # Single-page app shell
+scripts/
+  export-chromadb.py # Exports ChromaDB → JSON with pre-computed projections
+public/data/
+  claude-memory.json # Exported data (~100MB, gitignored)
+  demo.json          # Small demo dataset (committed)
 ```
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
+## Key Technical Details
 
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
+- **Rendering**: Three.js point cloud with OrbitControls
+- **Projections**: UMAP, t-SNE, PCA pre-computed in Python (export script)
+- **Search**: Transformers.js in-browser embeddings (all-mpnet-base-v2, ~420MB cached)
+- **AI Summaries**: Ollama local LLM for box-selection summaries
 
-With the following `frontend.tsx`:
+## Data Flow
 
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
+1. `claude-memory` stores conversations in ChromaDB with embeddings
+2. `export-chromadb.py` reads ChromaDB, computes 3D projections, outputs JSON
+3. Browser loads JSON, renders point cloud, enables search/interaction
 
-// import .css files directly and it works
-import './index.css';
+## Common Tasks
 
-const root = createRoot(document.body);
+**Add new feature**: Edit `src/main.ts` - it's a single-file app
 
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
+**Update after claude-memory changes**: Run `python scripts/export-chromadb.py`
 
-root.render(<Frontend />);
-```
+**Change projection algorithms**: Modify `export-chromadb.py` (Python) for computation, `main.ts` for UI
 
-Then, run index.ts
+## Dependencies
 
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+- Uses **Bun** (not npm/node) - see `bun install`, `bun run dev`
+- Export script needs Python with: chromadb, umap-learn, scikit-learn, numpy
+- Optional: Ollama for AI summaries

@@ -2,13 +2,40 @@
 
 3D visualization of embedding spaces from [claude-memory](https://github.com/jopnelli/claude-memory) - explore your Claude Code conversations in semantic space.
 
+## Prerequisites
+
+This visualizer works with data from [claude-memory](https://github.com/jopnelli/claude-memory). You'll need:
+
+1. **[Bun](https://bun.sh)** - Fast JavaScript runtime
+   ```bash
+   curl -fsSL https://bun.sh/install | bash
+   ```
+
+2. **claude-memory installed and synced** - Follow the [claude-memory setup guide](https://github.com/jopnelli/claude-memory)
+
+3. **Python dependencies** for the export script (or use claude-memory's venv):
+   ```bash
+   pip install chromadb umap-learn scikit-learn numpy
+   # Or if you have claude-memory installed:
+   # ~/dev/claude-memory/.venv/bin/python scripts/export-chromadb.py
+   ```
+
+4. **Ollama** (optional) - For AI summaries when box-selecting points:
+   ```bash
+   ollama pull qwen2.5:1.5b   # or any text model
+   ```
+
 ## Quick Start
 
 ```bash
+# Clone the repo
+git clone https://github.com/jopnelli/claude-memory-visualizer
+cd claude-memory-visualizer
+
 # Install dependencies
 bun install
 
-# Export claude-memory data with pre-computed projections
+# Export your claude-memory data (skip if just trying the demo)
 python scripts/export-chromadb.py
 
 # Start dev server
@@ -17,13 +44,15 @@ bun run dev
 
 Open http://localhost:5173
 
+The visualizer auto-loads your Claude Memory data if available, otherwise shows a demo dataset.
+
 ## Features
 
 - **3D Point Cloud** - Visualize thousands of conversation embeddings in 3D space
 - **Pre-computed Projections** - UMAP, t-SNE, PCA computed server-side for instant switching
-- **Semantic Search** - Find conversations by meaning using in-browser embeddings (Transformers.js)
-- **Time-based Coloring** - Older conversations in blue, newer in red (gradient legend)
-- **Educational Explanations** - Learn how each algorithm works with simplified explanations
+- **Semantic Search** - Find conversations by meaning using `all-mpnet-base-v2` embeddings
+- **Box Selection** - Cmd+drag to select regions, get AI summaries via Ollama
+- **Time-based Coloring** - Older conversations in blue, newer in red
 - **Inspector Panel** - Hover/click to see full document text and metadata
 
 ## Export Script
@@ -39,11 +68,6 @@ python scripts/export-chromadb.py \
   --chroma-path /path/to/chroma \
   --output public/data/my-data.json \
   --limit 1000
-```
-
-**Requirements:**
-```bash
-pip install chromadb umap-learn scikit-learn numpy
 ```
 
 **Output format:**
@@ -66,15 +90,16 @@ pip install chromadb umap-learn scikit-learn numpy
 
 ## Data Sources
 
-1. **Claude Memory** - Select "Claude Memory (real)" from the dropdown to load pre-exported data
-2. **Custom JSON** - Upload any JSON file with `documents` array containing `id`, `text`, `embedding`, and optional `metadata`
+1. **Claude Memory** - Your exported claude-memory data with full semantic search
+2. **Demo Dataset** - A small sample dataset to explore the interface (text search only)
 
 ## Tech Stack
 
 - **Three.js** - 3D rendering with point clouds and OrbitControls
 - **DRUIDJS** - Browser-side dimensionality reduction (fallback if no pre-computed projections)
-- **Transformers.js** - In-browser semantic search with all-mpnet-base-v2 (768D, ~420MB cached)
-- **Vite** - Dev server and bundling
+- **Transformers.js** - In-browser `all-mpnet-base-v2` embeddings for semantic search (~420MB, cached)
+- **Ollama** - Local AI summaries for box selection (optional)
+- **Bun + Vite** - Dev server and bundling
 - **TypeScript** - Type-safe codebase
 
 ## Algorithms

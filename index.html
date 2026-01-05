@@ -54,7 +54,7 @@
       color: #888;
       margin-bottom: 4px;
     }
-    select, button, input[type="file"] {
+    select, button {
       width: 100%;
       padding: 8px 12px;
       background: #1a1a1a;
@@ -179,44 +179,32 @@
       <h2>Data</h2>
       <div class="controls">
         <div class="control-group">
-          <label>Load Data</label>
-          <div id="drop-zone" style="border: 2px dashed #333; border-radius: 8px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s;">
-            <input type="file" id="file-input" accept=".json" style="display: none;">
-            <div style="color: #666; font-size: 12px;">
-              Drop JSON or <span style="color: #3b82f6; text-decoration: underline;">browse</span>
-            </div>
-          </div>
-        </div>
-        <div class="control-group">
-          <label>Or use sample</label>
           <select id="sample-select">
-            <option value="">Select sample...</option>
-            <option value="claude-memory">Claude Memory (real)</option>
+            <option value="">Select dataset...</option>
+            <option value="claude-memory">Claude Memory</option>
             <option value="demo">Demo Dataset</option>
           </select>
         </div>
+        <div class="stats" id="stats"></div>
       </div>
 
       <h2 style="margin-top: 24px;">Projection</h2>
       <div class="controls">
         <div class="control-group">
-          <label>Algorithm</label>
           <select id="algorithm-select">
             <option value="umap">UMAP</option>
             <option value="tsne">t-SNE</option>
             <option value="pca">PCA</option>
           </select>
         </div>
-        <div id="algorithm-info" class="info-panel"></div>
+        <div id="algorithm-info" class="info-panel" style="margin-top: 8px;"></div>
       </div>
-
-      <div class="stats" id="stats">No data loaded</div>
 
       <div class="color-legend" id="legend"></div>
     </div>
 
     <div id="canvas-container">
-      <div class="loading" id="loading">Load data to begin</div>
+      <div class="loading" id="loading">Loading...</div>
       <div class="selection-hint" style="position: absolute; bottom: 12px; left: 12px; font-size: 11px; color: #555; pointer-events: none;">
         ⌘+drag to select region
       </div>

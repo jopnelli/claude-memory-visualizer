@@ -60,7 +60,6 @@ const loadingEl = document.getElementById('loading')!;
 const statsEl = document.getElementById('stats')!;
 const inspectorEl = document.querySelector('.inspector-content')!;
 const legendEl = document.getElementById('legend')!;
-const fileInput = document.getElementById('file-input') as HTMLInputElement;
 const sampleSelect = document.getElementById('sample-select') as HTMLSelectElement;
 const algorithmSelect = document.getElementById('algorithm-select') as HTMLSelectElement;
 const queryInput = document.getElementById('query-input') as HTMLInputElement;
@@ -119,15 +118,15 @@ const DIM_FACTOR = 0.15;
 
 // Simplified explanations for algorithms
 const ALGORITHM_INFO: Record<string, string> = {
-  umap: `<strong>UMAP</strong> <span class="tag">recommended</span>
+  umap: `<strong>UMAP</strong>
 <br><br>
 Best balance of speed and quality. Similar conversations cluster together while keeping the overall shape meaningful.`,
 
-  tsne: `<strong>t-SNE</strong> <span class="tag">pre-computed</span>
+  tsne: `<strong>t-SNE</strong>
 <br><br>
 Creates tight, well-separated clusters. Great for finding distinct groups of conversations.`,
 
-  pca: `<strong>PCA</strong> <span class="tag">fast</span>
+  pca: `<strong>PCA</strong>
 <br><br>
 Fastest option. Good for a quick overview, but clusters may overlap more than other methods.`,
 };
@@ -140,12 +139,13 @@ Type anything and we'll find conversations with <strong>similar meaning</strong>
   <summary style="cursor: pointer; color: #666;">Learn more</summary>
   <div style="margin-top: 8px; padding: 8px; background: #111; border-radius: 4px;">
     <strong style="color: #ccc;">Embedding</strong><br>
-    Text is converted to a 768-dimensional vector using an AI model (all-mpnet-base-v2, ~420MB, cached after first use).
+    Text is converted to a 768-dimensional vector using all-mpnet-base-v2 via a local Python server (same model as claude-memory).
     <br><br>
     <strong style="color: #ccc;">Similarity</strong><br>
     We use <em>cosine similarity</em> — measuring the angle between vectors. Score of 100% = identical meaning, 0% = unrelated.
   </div>
 </details>`;
+
 
 // Create circular point texture
 function createCircleTexture(): THREE.Texture {
@@ -524,40 +524,48 @@ function clusterTopics(docs: Document[]): Array<{ topic: string; count: number; 
   return significantClusters;
 }
 
-// Generate AI summary using OpenRouter
+// Generate AI summary using Ollama
 async function generateAISummary(docs: Document[]): Promise<string> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error('NO_API_KEY');
+  // Check if Ollama is available
+  const ollamaReady = await checkOllama();
+  if (!ollamaReady) {
+    throw new Error('OLLAMA_NOT_AVAILABLE');
   }
 
   // Prepare the chunks text (limit to avoid token limits)
-  const maxChunks = 20;
+  const maxChunks = 15;
   const chunksToSummarize = docs.slice(0, maxChunks);
-  const chunksText = chunksToSummarize.map((doc, i) => `[${i + 1}] ${doc.text}`).join('\n\n---\n\n');
+  const chunksText = chunksToSummarize.map((doc, i) => `[${i + 1}] ${doc.text.slice(0, 500)}`).join('\n\n---\n\n');
 
   const prompt = `Here are ${chunksToSummarize.length} conversation chunks from a Claude memory database. Please provide a concise summary (2-3 sentences) of the main themes and topics discussed across these conversations:\n\n${chunksText}`;
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const response = await fetch(`${OLLAMA_URL}/api/generate`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'google/gemini-2.0-flash-001',
-      max_tokens: 300,
-      messages: [{ role: 'user', content: prompt }],
+      model: getSummaryModel(),
+      prompt: prompt,
+      stream: false,
+      options: {
+        num_predict: 200,
+      },
     }),
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || `API error: ${response.status}`);
+    throw new Error(`Ollama error: ${response.status}`);
   }
 
   const result = await response.json();
-  return result.choices?.[0]?.message?.content || 'No summary generated';
+  return result.response || 'No summary generated';
+}
+
+// Get the model to use for summaries (separate from embedding model)
+const OLLAMA_SUMMARY_MODEL_STORAGE = 'ollama-summary-model';
+const DEFAULT_SUMMARY_MODEL = 'qwen2.5:1.5b';
+
+function getSummaryModel(): string {
+  return localStorage.getItem(OLLAMA_SUMMARY_MODEL_STORAGE) || DEFAULT_SUMMARY_MODEL;
 }
 
 // Show summary modal for selected chunks
@@ -601,8 +609,6 @@ function showSelectionSummary() {
     </div>
   `).join('');
 
-  const hasApiKey = getApiKey() !== null;
-
   modal.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
       <h3 style="color: #fff; margin: 0; font-size: 18px; flex: 1;">Selection Summary</h3>
@@ -614,7 +620,7 @@ function showSelectionSummary() {
     <div style="margin-bottom: 20px;">
       <div style="color: #888; font-size: 12px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em;">AI Summary</div>
       <div id="ai-summary-result" style="font-size: 13px; color: #888;">
-        ${hasApiKey ? '<div class="spinner" style="margin: 8px 0;"></div> Generating summary...' : '<span style="color: #666;">Set OpenRouter API key in ⚙️ Settings to enable AI summaries</span>'}
+        <div class="spinner" style="margin: 8px 0;"></div> Generating summary...
       </div>
     </div>
     <div style="padding-top: 16px; border-top: 1px solid #333;">
@@ -651,27 +657,25 @@ function showSelectionSummary() {
   });
   backdrop.addEventListener('click', closeSelectionModal);
 
-  // Auto-generate AI summary if API key is set
-  if (hasApiKey) {
-    generateAISummary(selectedDocs)
-      .then(summary => {
-        const resultDiv = document.getElementById('ai-summary-result');
-        if (resultDiv) {
-          resultDiv.innerHTML = `<div style="color: #e0e0e0; line-height: 1.5; padding: 12px; background: #111; border-radius: 6px;">${escapeHtml(summary)}</div>`;
+  // Auto-generate AI summary using Ollama
+  generateAISummary(selectedDocs)
+    .then(summary => {
+      const resultDiv = document.getElementById('ai-summary-result');
+      if (resultDiv) {
+        resultDiv.innerHTML = `<div style="color: #e0e0e0; line-height: 1.5; padding: 12px; background: #111; border-radius: 6px;">${escapeHtml(summary)}</div>`;
+      }
+    })
+    .catch(err => {
+      const resultDiv = document.getElementById('ai-summary-result');
+      if (resultDiv) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        if (errorMessage === 'OLLAMA_NOT_AVAILABLE') {
+          resultDiv.innerHTML = '<span style="color: #666;">Ollama not running. Start Ollama to enable AI summaries.</span>';
+        } else {
+          resultDiv.innerHTML = `<span style="color: #ef4444;">Error: ${escapeHtml(errorMessage)}</span>`;
         }
-      })
-      .catch(err => {
-        const resultDiv = document.getElementById('ai-summary-result');
-        if (resultDiv) {
-          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-          if (errorMessage === 'NO_API_KEY') {
-            resultDiv.innerHTML = '<span style="color: #666;">Set OpenRouter API key in ⚙️ Settings to enable AI summaries</span>';
-          } else {
-            resultDiv.innerHTML = `<span style="color: #ef4444;">Error: ${escapeHtml(errorMessage)}</span>`;
-          }
-        }
-      });
-  }
+      }
+    });
 }
 
 function closeSelectionModal() {
@@ -914,20 +918,13 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// Load data from JSON
-async function loadData(source: File | string) {
+// Load data from URL
+async function loadData(url: string) {
   loadingEl.textContent = 'Loading data...';
 
   try {
-    let json: DataSet;
-
-    if (typeof source === 'string') {
-      const response = await fetch(source);
-      json = await response.json();
-    } else {
-      const text = await source.text();
-      json = JSON.parse(text);
-    }
+    const response = await fetch(url);
+    const json: DataSet = await response.json();
 
     data = json;
     queryInput.disabled = false;
@@ -958,8 +955,10 @@ async function computeProjection() {
 
   const algorithm = algorithmSelect.value as 'umap' | 'tsne' | 'pca';
 
-  // Store previous positions for smooth transition
-  const hadPreviousPoints = points !== null && projectedPositions !== null;
+  // Store previous positions for smooth transition (only if same document count)
+  const previousDocCount = projectedPositions ? projectedPositions.length / 3 : 0;
+  const sameDocCount = previousDocCount === data.documents.length;
+  const hadPreviousPoints = points !== null && projectedPositions !== null && sameDocCount;
   if (hadPreviousPoints) {
     previousPositions = new Float32Array(projectedPositions!);
   }
@@ -1238,11 +1237,9 @@ async function semanticSearch(query: string) {
   // Check if data has real embeddings (not 3D demo coordinates)
   const embDim = data.documents[0]?.embedding?.length || 0;
   if (embDim < 100) {
-    updateSearchStatus('Demo data - search disabled');
-    const resultsEl = document.getElementById('search-results');
-    if (resultsEl) {
-      resultsEl.innerHTML = '<span style="color: #666; font-size: 11px;">Demo dataset uses placeholder embeddings. Load real data for semantic search.</span>';
-    }
+    // Use text search for demo data
+    updateSearchStatus('Text search (demo mode)');
+    fallbackTextSearch(query);
     return;
   }
 
@@ -1313,21 +1310,35 @@ async function semanticSearch(query: string) {
 function fallbackTextSearch(query: string) {
   if (!data) return;
 
+  matchedIndices.clear();
+
   const lowerQuery = query.toLowerCase();
   const terms = lowerQuery.split(/\s+/).filter((t) => t.length > 0);
+
+  const matches: Array<{ index: number; score: number }> = [];
 
   for (let i = 0; i < data.documents.length; i++) {
     const doc = data.documents[i];
     const text = doc.text.toLowerCase();
 
-    const matches = terms.every((term) => text.includes(term));
-    if (matches) {
-      matchedIndices.set(i, 1.0);
+    const allTermsMatch = terms.every((term) => text.includes(term));
+    if (allTermsMatch) {
+      // Score based on how many times terms appear
+      let score = 0;
+      for (const term of terms) {
+        const count = (text.match(new RegExp(term, 'g')) || []).length;
+        score += count;
+      }
+      matchedIndices.set(i, Math.min(1.0, score / 10));
+      matches.push({ index: i, score: Math.min(1.0, score / 10) });
     }
   }
 
+  // Sort by score
+  matches.sort((a, b) => b.score - a.score);
+
   updatePointColors();
-  updateSearchResults(matchedIndices.size, data.documents.length, []);
+  updateSearchResults(matches.length, data.documents.length, matches.slice(0, 8), 1.0);
 }
 
 // CSS spinner keyframes (add once)
@@ -1495,7 +1506,31 @@ function updateLegend() {
   `;
 }
 
-// Update algorithm explanation panel
+
+// Event listeners
+sampleSelect.addEventListener('change', (e) => {
+  const value = (e.target as HTMLSelectElement).value;
+
+  // Clear search query when switching datasets
+  queryInput.value = '';
+  matchedIndices.clear();
+  const resultsEl = document.getElementById('search-results');
+  if (resultsEl) resultsEl.innerHTML = '';
+  const statusEl = document.getElementById('search-status');
+  if (statusEl) statusEl.innerHTML = '';
+
+  if (value === 'claude-memory') {
+    loadData('/data/claude-memory.json');
+    const defaultOption = sampleSelect.querySelector('option[value=""]');
+    if (defaultOption) defaultOption.remove();
+  } else if (value === 'demo') {
+    loadData('/data/demo.json');
+    const defaultOption = sampleSelect.querySelector('option[value=""]');
+    if (defaultOption) defaultOption.remove();
+  }
+});
+
+// Update algorithm info panel
 function updateAlgorithmInfo() {
   const infoEl = document.getElementById('algorithm-info');
   if (infoEl) {
@@ -1504,63 +1539,9 @@ function updateAlgorithmInfo() {
   }
 }
 
-// Event listeners
-const dropZone = document.getElementById('drop-zone');
-
-// File input change
-fileInput.addEventListener('change', (e) => {
-  const file = (e.target as HTMLInputElement).files?.[0];
-  if (file) loadData(file);
-});
-
-// Click to browse
-dropZone?.addEventListener('click', () => {
-  fileInput.click();
-});
-
-// Drag and drop
-dropZone?.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  dropZone.style.borderColor = '#3b82f6';
-  dropZone.style.background = 'rgba(59, 130, 246, 0.1)';
-});
-
-dropZone?.addEventListener('dragleave', (e) => {
-  e.preventDefault();
-  dropZone.style.borderColor = '#333';
-  dropZone.style.background = 'transparent';
-});
-
-dropZone?.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropZone.style.borderColor = '#333';
-  dropZone.style.background = 'transparent';
-
-  const file = e.dataTransfer?.files?.[0];
-  if (file && file.name.endsWith('.json')) {
-    loadData(file);
-  }
-});
-
-sampleSelect.addEventListener('change', (e) => {
-  const value = (e.target as HTMLSelectElement).value;
-  if (value === 'claude-memory') {
-    loadData('/data/claude-memory.json');
-    // Remove "Select sample..." option after selection
-    const defaultOption = sampleSelect.querySelector('option[value=""]');
-    if (defaultOption) defaultOption.remove();
-  } else if (value === 'demo') {
-    loadData('/data/demo.json');
-    // Remove "Select sample..." option after selection
-    const defaultOption = sampleSelect.querySelector('option[value=""]');
-    if (defaultOption) defaultOption.remove();
-  }
-});
-
-// Algorithm dropdown - update explanation and auto-compute
+// Algorithm dropdown - update info and auto-compute when changed
 algorithmSelect.addEventListener('change', () => {
   updateAlgorithmInfo();
-  // Auto-compute if data is loaded
   if (data) {
     computeProjection();
   }
@@ -1595,7 +1576,7 @@ if (queryContainer) {
   resultsEl.style.cssText = 'font-size: 12px; margin-top: 8px; max-height: 200px; overflow-y: auto;';
   queryContainer.appendChild(resultsEl);
 
-  // Add simplified search explanation
+  // Search explanation
   const searchInfoEl = document.createElement('div');
   searchInfoEl.id = 'search-info';
   searchInfoEl.className = 'info-panel';
@@ -1613,24 +1594,12 @@ if (queryContainer) {
   }
 };
 
-// Settings management
-const OPENROUTER_API_KEY_STORAGE = 'openrouter-api-key';
-
-function getApiKey(): string | null {
-  return localStorage.getItem(OPENROUTER_API_KEY_STORAGE);
-}
-
-function setApiKey(key: string) {
-  localStorage.setItem(OPENROUTER_API_KEY_STORAGE, key);
-}
-
 function showSettingsModal() {
   const existingModal = document.getElementById('settings-modal');
   if (existingModal) existingModal.remove();
 
-  const currentKey = getApiKey() || '';
-  const hasKey = currentKey.length > 0;
   const currentOllamaModel = getOllamaModel();
+  const currentSummaryModel = getSummaryModel();
 
   const modal = document.createElement('div');
   modal.id = 'settings-modal';
@@ -1657,27 +1626,25 @@ function showSettingsModal() {
       <button id="close-settings-modal" style="background: none; border: none; color: #666; font-size: 24px; cursor: pointer; padding: 0; line-height: 1; width: 24px; height: 24px;">&times;</button>
     </div>
 
-    <!-- Ollama Settings -->
-    <div style="margin-bottom: 24px;">
-      <div style="color: #888; font-size: 12px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Embeddings</div>
-      <div id="ollama-status" style="font-size: 12px; color: #666; margin-bottom: 12px; padding: 10px; background: #111; border-radius: 6px;">Checking Ollama...</div>
-      <div style="margin-bottom: 12px;">
-        <label style="display: block; color: #666; font-size: 11px; margin-bottom: 4px;">Ollama Model</label>
-        <input type="text" id="settings-ollama-model" placeholder="nomic-embed-text" value="${escapeHtml(currentOllamaModel)}" style="width: 100%; padding: 10px 12px; background: #111; border: 1px solid #333; border-radius: 6px; color: #fff; font-size: 13px; box-sizing: border-box;">
-      </div>
-      <div style="font-size: 11px; color: #555;">
-        Ollama auto-starts with dev server. Falls back to browser if unavailable.
+    <!-- Ollama Status -->
+    <div style="margin-bottom: 20px;">
+      <div id="ollama-status" style="font-size: 12px; color: #666; padding: 10px; background: #111; border-radius: 6px;">Checking Ollama...</div>
+    </div>
+
+    <!-- Search Info -->
+    <div style="margin-bottom: 20px;">
+      <div style="color: #888; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">Semantic Search</div>
+      <div style="font-size: 12px; color: #666; padding: 10px; background: #111; border-radius: 6px;">
+        Uses <code style="background: #222; padding: 1px 4px; border-radius: 2px;">all-mpnet-base-v2</code> (same as claude-memory) via local Python server or browser fallback.
       </div>
     </div>
 
-    <!-- OpenRouter Settings -->
-    <div style="margin-bottom: 20px; padding-top: 16px; border-top: 1px solid #333;">
-      <div style="color: #888; font-size: 12px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">AI Summaries (OpenRouter)</div>
-      <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-        <input type="password" id="settings-api-key" placeholder="sk-or-..." value="${escapeHtml(currentKey)}" style="flex: 1; padding: 10px 12px; background: #111; border: 1px solid #333; border-radius: 6px; color: #fff; font-size: 13px;">
-      </div>
-      <div style="font-size: 11px; color: #666;">
-        ${hasKey ? '✓ API key is set' : 'Required for AI summaries when selecting points'}
+    <!-- Summary Model -->
+    <div style="margin-bottom: 20px;">
+      <div style="color: #888; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">Summary Model</div>
+      <input type="text" id="settings-summary-model" placeholder="qwen2.5:1.5b" value="${escapeHtml(currentSummaryModel)}" style="width: 100%; padding: 10px 12px; background: #111; border: 1px solid #333; border-radius: 6px; color: #fff; font-size: 13px; box-sizing: border-box;">
+      <div style="font-size: 11px; color: #555; margin-top: 6px;">
+        Used for AI summaries when selecting points (any Ollama text model).
       </div>
     </div>
 
@@ -1724,25 +1691,13 @@ function showSettingsModal() {
   backdrop.addEventListener('click', closeSettings);
 
   document.getElementById('save-settings')?.addEventListener('click', () => {
-    const apiKeyInput = document.getElementById('settings-api-key') as HTMLInputElement;
-    const ollamaModelInput = document.getElementById('settings-ollama-model') as HTMLInputElement;
+    const summaryModelInput = document.getElementById('settings-summary-model') as HTMLInputElement;
+    const summaryModel = summaryModelInput?.value?.trim() || DEFAULT_SUMMARY_MODEL;
 
-    const apiKey = apiKeyInput?.value?.trim() || '';
-    const ollamaModel = ollamaModelInput?.value?.trim() || DEFAULT_OLLAMA_MODEL;
-
-    // Save all settings
-    if (apiKey) {
-      setApiKey(apiKey);
-    }
-    localStorage.setItem(OLLAMA_MODEL_STORAGE, ollamaModel);
-
-    // Reset Ollama cache so next search uses new settings
-    ollamaAvailable = null;
+    // Save settings
+    localStorage.setItem(OLLAMA_SUMMARY_MODEL_STORAGE, summaryModel);
 
     closeSettings();
-
-    // Re-init embedder with new settings
-    initEmbedder();
   });
 }
 
@@ -1751,6 +1706,25 @@ document.getElementById('settings-btn')?.addEventListener('click', showSettingsM
 
 // Initialize
 initThree();
-
-// Show default algorithm explanation
 updateAlgorithmInfo();
+
+// Auto-load data on start
+(async () => {
+  // Try to load Claude Memory first, fall back to demo
+  try {
+    const response = await fetch('/data/claude-memory.json', { method: 'HEAD' });
+    if (response.ok) {
+      sampleSelect.value = 'claude-memory';
+      loadData('/data/claude-memory.json');
+    } else {
+      throw new Error('Not found');
+    }
+  } catch {
+    // Fall back to demo dataset
+    sampleSelect.value = 'demo';
+    loadData('/data/demo.json');
+  }
+  // Remove the "Select dataset..." placeholder
+  const defaultOption = sampleSelect.querySelector('option[value=""]');
+  if (defaultOption) defaultOption.remove();
+})();
