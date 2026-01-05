@@ -128,6 +128,20 @@ bun run dev
 python scripts/export-chromadb.py
 ```
 
+### Faster Semantic Search (Optional)
+
+By default, semantic search downloads a ~420MB embedding model to the browser on first use. For faster search, run the local embedding server:
+
+```bash
+# Install sentence-transformers (one time)
+pip install sentence-transformers
+
+# Run the embedding server (in a separate terminal)
+python scripts/embed-server.py
+```
+
+The visualizer auto-detects the local server and uses it for faster search.
+
 ## License
 
 MIT
